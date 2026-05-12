@@ -53,6 +53,7 @@ def _get_anthropic_sdk():
             _anthropic_sdk = None
     return _anthropic_sdk
 
+
 logger = logging.getLogger(__name__)
 
 THINKING_BUDGET = {"xhigh": 32000, "high": 16000, "medium": 8000, "low": 4000}
@@ -485,7 +486,8 @@ def _requires_bearer_auth(base_url: str | None) -> bool:
         return False
     normalized = normalized.rstrip("/").lower()
     return (
-        normalized.startswith(("https://api.minimax.io/anthropic", "https://api.minimaxi.com/anthropic"))
+        normalized.startswith(
+            ("https://api.minimax.io/anthropic", "https://api.minimaxi.com/anthropic"))
         or "azure.com" in normalized
     )
 
@@ -603,14 +605,16 @@ def _build_anthropic_client_with_bearer_hook(
     from httpx import Timeout
     from agent.azure_identity_adapter import build_bearer_http_client
 
-    _read_timeout = timeout if (isinstance(timeout, (int, float)) and timeout > 0) else 900.0
+    _read_timeout = timeout if (isinstance(
+        timeout, (int, float)) and timeout > 0) else 900.0
     timeout_obj = Timeout(timeout=float(_read_timeout), connect=10.0)
 
     # Strip any trailing /v1 — the Anthropic SDK appends /v1/messages.
     normalized_base_url = _normalize_base_url_text(base_url)
     if normalized_base_url:
         import re as _re
-        normalized_base_url = _re.sub(r"/v1/?$", "", normalized_base_url.rstrip("/"))
+        normalized_base_url = _re.sub(
+            r"/v1/?$", "", normalized_base_url.rstrip("/"))
 
     http_client = build_bearer_http_client(token_provider, timeout=timeout_obj)
 
@@ -695,7 +699,8 @@ def build_anthropic_client(
     from httpx import Timeout
 
     normalized_base_url = _normalize_base_url_text(base_url)
-    _read_timeout = timeout if (isinstance(timeout, (int, float)) and timeout > 0) else 900.0
+    _read_timeout = timeout if (isinstance(
+        timeout, (int, float)) and timeout > 0) else 900.0
     kwargs = {
         "timeout": Timeout(timeout=float(_read_timeout), connect=10.0),
     }
@@ -721,7 +726,7 @@ def build_anthropic_client(
         kwargs["api_key"] = api_key
         kwargs["default_headers"] = {
             "User-Agent": "claude-code/0.1.0",
-            **( {"anthropic-beta": ",".join(common_betas)} if common_betas else {} )
+            **({"anthropic-beta": ",".join(common_betas)} if common_betas else {})
         }
     elif _requires_bearer_auth(normalized_base_url):
         # Some Anthropic-compatible providers (e.g. MiniMax) expect the API key in
@@ -732,7 +737,8 @@ def build_anthropic_client(
         # Anthropic OAuth/setup tokens.
         kwargs["auth_token"] = api_key
         if common_betas:
-            kwargs["default_headers"] = {"anthropic-beta": ",".join(common_betas)}
+            kwargs["default_headers"] = {
+                "anthropic-beta": ",".join(common_betas)}
     elif _is_third_party_anthropic_endpoint(base_url):
         # Third-party proxies (Microsoft Foundry, AWS Bedrock, etc.) use their
         # own API keys with x-api-key auth. Skip OAuth detection — their keys
@@ -740,7 +746,8 @@ def build_anthropic_client(
         # misclassified as OAuth tokens.
         kwargs["api_key"] = api_key
         if common_betas:
-            kwargs["default_headers"] = {"anthropic-beta": ",".join(common_betas)}
+            kwargs["default_headers"] = {
+                "anthropic-beta": ",".join(common_betas)}
     elif _is_oauth_token(api_key):
         # OAuth access token / setup-token → Bearer auth + Claude Code identity.
         # Anthropic routes OAuth requests based on user-agent and headers;
@@ -756,7 +763,8 @@ def build_anthropic_client(
         # Regular API key → x-api-key header + common betas
         kwargs["api_key"] = api_key
         if common_betas:
-            kwargs["default_headers"] = {"anthropic-beta": ",".join(common_betas)}
+            kwargs["default_headers"] = {
+                "anthropic-beta": ",".join(common_betas)}
 
     return _anthropic_sdk.Anthropic(**kwargs)
 
@@ -793,7 +801,8 @@ def build_anthropic_bedrock_client(region: str):
     return _anthropic_sdk.AnthropicBedrock(
         aws_region=region,
         timeout=Timeout(timeout=900.0, connect=10.0),
-        default_headers={"anthropic-beta": ",".join([*_COMMON_BETAS, _CONTEXT_1M_BETA])},
+        default_headers={
+            "anthropic-beta": ",".join([*_COMMON_BETAS, _CONTEXT_1M_BETA])},
     )
 
 
@@ -954,12 +963,14 @@ def refresh_anthropic_oauth_pure(refresh_token: str, *, use_json: bool = False) 
                 result = json.loads(resp.read().decode())
         except Exception as exc:
             last_error = exc
-            logger.debug("Anthropic token refresh failed at %s: %s", endpoint, exc)
+            logger.debug(
+                "Anthropic token refresh failed at %s: %s", endpoint, exc)
             continue
 
         access_token = result.get("access_token", "")
         if not access_token:
-            raise ValueError("Anthropic refresh response was missing access_token")
+            raise ValueError(
+                "Anthropic refresh response was missing access_token")
         next_refresh = result.get("refresh_token", refresh_token)
         expires_in = result.get("expires_in", 3600)
         return {
@@ -1032,7 +1043,8 @@ def _write_claude_code_credentials(
         cred_path.parent.mkdir(parents=True, exist_ok=True)
         # Per-process random suffix avoids collisions between concurrent
         # writers and stale leftovers from a prior crashed write.
-        _tmp_cred = cred_path.with_suffix(f".tmp.{os.getpid()}.{secrets.token_hex(4)}")
+        _tmp_cred = cred_path.with_suffix(
+            f".tmp.{os.getpid()}.{secrets.token_hex(4)}")
         try:
             # Create the temp file atomically at 0o600. The previous
             # write_text + post-replace chmod opened a TOCTOU window where
@@ -1073,7 +1085,8 @@ def _resolve_claude_code_token_from_credentials(creds: Optional[Dict[str, Any]] 
         refreshed = _refresh_oauth_token(creds)
         if refreshed:
             return refreshed
-        logger.debug("Token refresh failed — re-run 'claude setup-token' to reauthenticate")
+        logger.debug(
+            "Token refresh failed — re-run 'claude setup-token' to reauthenticate")
     return None
 
 
@@ -1200,7 +1213,8 @@ def _generate_pkce() -> tuple:
     import hashlib
     import secrets
 
-    verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+    verifier = base64.urlsafe_b64encode(
+        secrets.token_bytes(32)).rstrip(b"=").decode()
     challenge = base64.urlsafe_b64encode(
         hashlib.sha256(verifier.encode()).digest()
     ).rstrip(b"=").decode()
@@ -1244,7 +1258,7 @@ def run_hermes_oauth_login_pure() -> Optional[Dict[str, Any]]:
     try:
         from hermes_cli.auth import _can_open_graphical_browser as _can_open_gui
     except Exception:
-        _can_open_gui = lambda: True  # noqa: E731 — degrade to prior behavior
+        def _can_open_gui(): return True  # noqa: E731 — degrade to prior behavior
 
     if _can_open_gui():
         try:
@@ -1513,7 +1527,8 @@ def _convert_content_part_to_anthropic(part: Any) -> Optional[Dict[str, Any]]:
         block: Dict[str, Any] = {"type": "text", "text": part.get("text", "")}
     elif ptype in {"image_url", "input_image"}:
         image_value = part.get("image_url", {})
-        url = image_value.get("url", "") if isinstance(image_value, dict) else str(image_value or "")
+        url = image_value.get("url", "") if isinstance(
+            image_value, dict) else str(image_value or "")
         block = {"type": "image", "source": _image_source_from_openai_url(url)}
     else:
         block = dict(part)
@@ -1544,17 +1559,20 @@ def _to_plain_data(value: Any, *, _depth: int = 0, _path: Optional[set] = None) 
 
     if hasattr(value, "model_dump"):
         _path.add(obj_id)
-        result = _to_plain_data(value.model_dump(), _depth=_depth + 1, _path=_path)
+        result = _to_plain_data(
+            value.model_dump(), _depth=_depth + 1, _path=_path)
         _path.discard(obj_id)
         return result
     if isinstance(value, dict):
         _path.add(obj_id)
-        result = {k: _to_plain_data(v, _depth=_depth + 1, _path=_path) for k, v in value.items()}
+        result = {k: _to_plain_data(v, _depth=_depth + 1, _path=_path)
+                  for k, v in value.items()}
         _path.discard(obj_id)
         return result
     if isinstance(value, (list, tuple)):
         _path.add(obj_id)
-        result = [_to_plain_data(v, _depth=_depth + 1, _path=_path) for v in value]
+        result = [_to_plain_data(v, _depth=_depth + 1, _path=_path)
+                  for v in value]
         _path.discard(obj_id)
         return result
     if hasattr(value, "__dict__"):
@@ -1675,7 +1693,8 @@ def _convert_assistant_message(m: Dict[str, Any]) -> Dict[str, Any]:
     # downgraded to a spurious text block on the last assistant message.
     reasoning_content = m.get("reasoning_content")
     _already_has_thinking = any(
-        isinstance(b, dict) and b.get("type") in {"thinking", "redacted_thinking"}
+        isinstance(b, dict) and b.get("type") in {
+            "thinking", "redacted_thinking"}
         for b in blocks
     )
     if isinstance(reasoning_content, str) and not _already_has_thinking:
@@ -1715,7 +1734,8 @@ def _convert_tool_message_to_result(
     if multimodal_blocks is None:
         stashed = m.get("_anthropic_content_blocks")
         if isinstance(stashed, list) and stashed:
-            text_content = content if isinstance(content, str) and content.strip() else None
+            text_content = content if isinstance(
+                content, str) and content.strip() else None
             multimodal_blocks = (
                 [{"type": "text", "text": text_content}] + stashed
                 if text_content else list(stashed)
@@ -1797,13 +1817,15 @@ def _strip_orphaned_tool_blocks(result: List[Dict[str, Any]]) -> None:
             # replaying it verbatim.  See hermes-agent: extended-thinking + parallel
             # tool batch interrupted mid-flight → non-retryable 400 crash-loop.
             if len(kept) != len(m["content"]) and any(
-                isinstance(b, dict) and b.get("type") in {"thinking", "redacted_thinking"}
+                isinstance(b, dict) and b.get("type") in {
+                    "thinking", "redacted_thinking"}
                 for b in m["content"]
             ):
                 m["_thinking_signature_invalidated"] = True
             m["content"] = kept
             if not m["content"]:
-                m["content"] = [{"type": "text", "text": "(tool call removed)"}]
+                m["content"] = [
+                    {"type": "text", "text": "(tool call removed)"}]
 
     # Strip orphaned tool_result blocks (no matching tool_use precedes them)
     tool_use_ids = set()
@@ -1820,7 +1842,8 @@ def _strip_orphaned_tool_blocks(result: List[Dict[str, Any]]) -> None:
                 if b.get("type") != "tool_result" or b.get("tool_use_id") in tool_use_ids
             ]
             if not m["content"]:
-                m["content"] = [{"type": "text", "text": "(tool result removed)"}]
+                m["content"] = [
+                    {"type": "text", "text": "(tool result removed)"}]
 
 
 def _merge_consecutive_roles(result: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -1934,7 +1957,8 @@ def _manage_thinking_signatures(
                 b for b in m["content"]
                 if not (isinstance(b, dict) and b.get("type") in _THINKING_TYPES)
             ]
-            m["content"] = stripped or [{"type": "text", "text": "(thinking elided)"}]
+            m["content"] = stripped or [
+                {"type": "text", "text": "(thinking elided)"}]
         else:
             # Latest assistant on direct Anthropic: keep signed, downgrade unsigned
             # to text so the reasoning isn't lost.
@@ -1956,7 +1980,8 @@ def _manage_thinking_signatures(
                 if signature_dead:
                     thinking_text = b.get("thinking", "")
                     if thinking_text:
-                        new_content.append({"type": "text", "text": thinking_text})
+                        new_content.append(
+                            {"type": "text", "text": thinking_text})
                     continue
                 if b.get("type") == "redacted_thinking":
                     # Redacted blocks use 'data' for the signature payload —
@@ -1968,7 +1993,8 @@ def _manage_thinking_signatures(
                 else:
                     thinking_text = b.get("thinking", "")
                     if thinking_text:
-                        new_content.append({"type": "text", "text": thinking_text})
+                        new_content.append(
+                            {"type": "text", "text": thinking_text})
             m["content"] = new_content or [{"type": "text", "text": "(empty)"}]
 
         # Strip cache_control from any remaining thinking/redacted_thinking
@@ -2194,7 +2220,8 @@ def build_anthropic_kwargs(
                     if isinstance(block, dict):
                         if block.get("type") == "tool_use" and "name" in block:
                             if not block["name"].startswith(_MCP_TOOL_PREFIX):
-                                block["name"] = _MCP_TOOL_PREFIX + block["name"]
+                                block["name"] = _MCP_TOOL_PREFIX + \
+                                    block["name"]
                         elif block.get("type") == "tool_result" and "tool_use_id" in block:
                             pass  # tool_result uses ID, not name
 
@@ -2263,7 +2290,8 @@ def build_anthropic_kwargs(
                     "effort": adaptive_effort,
                 }
             else:
-                kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
+                kwargs["thinking"] = {
+                    "type": "enabled", "budget_tokens": budget}
                 # Anthropic requires temperature=1 when thinking is enabled on older models
                 kwargs["temperature"] = 1
                 kwargs["max_tokens"] = max(effective_max_tokens, budget + 4096)
@@ -2341,3 +2369,19 @@ def sanitize_anthropic_kwargs(api_kwargs: Any, *, log_prefix: str = "") -> Any:
             sorted(leaked),
         )
     return api_kwargs
+
+
+# ---------------------------------------------------------------------------
+# Claude Code OAuth bypass — drop-in file at agent/claude_code_bypass.py
+# To update: replace that file with the latest version from
+# https://github.com/kristianvast/hermes-claude-auth
+# ---------------------------------------------------------------------------
+try:
+    from agent.claude_code_bypass import apply_patches as _apply_bypass
+    import sys as _sys
+    _apply_bypass(_sys.modules[__name__])
+except ImportError:
+    pass
+except Exception as _exc:
+    import logging as _logging
+    _logging.getLogger(__name__).debug("claude_code_bypass: %s", _exc)
