@@ -5873,7 +5873,7 @@ class GatewayRunner:
         failures (bad auth, etc.) still drop out of the queue immediately.
         """
         _BACKOFF_CAP = 300  # 5 minutes max between retries
-        _PAUSE_AFTER_FAILURES = 10  # circuit-breaker threshold
+        _PAUSE_AFTER_FAILURES = 40  # circuit-breaker threshold
 
         await asyncio.sleep(10)  # initial delay — let startup finish
         while self._running:

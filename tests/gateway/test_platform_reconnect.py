@@ -302,11 +302,11 @@ class TestPlatformReconnectWatcher:
         runner = _make_runner()
 
         platform_config = PlatformConfig(enabled=True, token="test")
-        # 9 prior attempts — the next failure will be the 10th and should
+        # 39 prior attempts — the next failure will be the 40th and should
         # trip the circuit breaker.
         runner._failed_platforms[Platform.TELEGRAM] = {
             "config": platform_config,
-            "attempts": 9,
+            "attempts": 39,
             "next_retry": time.monotonic() - 1,
         }
 
@@ -336,7 +336,7 @@ class TestPlatformReconnectWatcher:
         assert Platform.TELEGRAM in runner._failed_platforms
         info = runner._failed_platforms[Platform.TELEGRAM]
         assert info["paused"] is True
-        assert info["attempts"] == 10
+        assert info["attempts"] == 40
         assert "pause_reason" in info
 
     @pytest.mark.asyncio
