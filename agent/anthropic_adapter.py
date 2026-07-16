@@ -3282,3 +3282,19 @@ def create_anthropic_message(
     create_kwargs = dict(api_kwargs)
     create_kwargs.pop("stream", None)
     return messages_api.create(**create_kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Claude Code OAuth bypass — drop-in file at agent/claude_code_bypass.py
+# To update: replace that file with the latest version from
+# https://github.com/kristianvast/hermes-claude-auth
+# ---------------------------------------------------------------------------
+try:
+    from agent.claude_code_bypass import apply_patches as _apply_bypass
+    import sys as _sys
+    _apply_bypass(_sys.modules[__name__])
+except ImportError:
+    pass
+except Exception as _exc:
+    import logging as _logging
+    _logging.getLogger(__name__).debug("claude_code_bypass: %s", _exc)
