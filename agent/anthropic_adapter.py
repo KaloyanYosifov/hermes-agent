@@ -1688,6 +1688,58 @@ def _content_parts_to_anthropic_blocks(parts: Any) -> List[Dict[str, Any]]:
     return out
 
 
+def _sanitize_replay_block(b: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Strip output-only fields from a stored Anthropic content block so it is
+    valid as REQUEST input on replay.
+
+    The SDK response objects carry output-only attributes that the Messages
+    *input* schema forbids ("Extra inputs are not permitted"): text blocks get
+    ``parsed_output``/``citations`` (when null), tool_use blocks get ``caller``,
+    etc. ``normalize_response`` captured blocks verbatim via ``_to_plain_data``,
+    so these leak back as input on the next turn → HTTP 400.
+
+    Whitelist per type (NOT a blacklist) so future SDK output-only fields can't
+    reintroduce the bug. Returns a clean block, or None to drop it.
+    """
+    if not isinstance(b, dict):
+        return None
+    btype = b.get("type")
+    if btype == "text":
+        out: Dict[str, Any] = {"type": "text", "text": b.get("text", "")}
+        # citations is input-valid ONLY when it's a non-empty list; the SDK
+        # emits citations=None on responses, which the input schema rejects.
+        cits = b.get("citations")
+        if isinstance(cits, list) and cits:
+            out["citations"] = cits
+        if isinstance(b.get("cache_control"), dict):
+            out["cache_control"] = b["cache_control"]
+        return out
+    if btype == "thinking":
+        out = {"type": "thinking", "thinking": b.get("thinking", "")}
+        if b.get("signature"):
+            out["signature"] = b["signature"]
+        return out
+    if btype == "redacted_thinking":
+        # Only valid with its data payload; drop if missing.
+        return {"type": "redacted_thinking", "data": b["data"]} if b.get("data") else None
+    if btype == "tool_use":
+        out = {
+            "type": "tool_use",
+            "id": _sanitize_tool_id(b.get("id", "")),
+            "name": b.get("name", ""),
+            "input": b.get("input", {}),
+        }
+        if isinstance(b.get("cache_control"), dict):
+            out["cache_control"] = b["cache_control"]
+        return out
+    if btype == "image":
+        src = b.get("source")
+        return {"type": "image", "source": src} if isinstance(src, dict) else None
+    # Unknown/unsupported block type on the input path — drop rather than risk
+    # another "Extra inputs are not permitted".
+    return None
+
+
 def _convert_assistant_message(m: Dict[str, Any]) -> Dict[str, Any]:
     """Convert an assistant message to Anthropic content blocks.
 
@@ -1695,6 +1747,25 @@ def _convert_assistant_message(m: Dict[str, Any]) -> Dict[str, Any]:
     reasoning_content injection for Kimi/DeepSeek endpoints.
     """
     content = m.get("content", "")
+    # Anthropic interleaved-thinking fast path: when this turn carries a
+    # verbatim, order-preserving block list (set by normalize_response only
+    # for turns that interleave SIGNED thinking with tool_use), replay it.
+    # Each block is run through _sanitize_replay_block to strip output-only
+    # SDK fields (parsed_output, caller, citations=None, …) that the Messages
+    # INPUT schema forbids — replaying them verbatim caused HTTP 400 "Extra
+    # inputs are not permitted" (text.parsed_output). Block ORDER is preserved
+    # (the reason this channel exists); only forbidden sibling fields are
+    # dropped, leaving thinking signatures and tool_use id/name/input intact.
+    ordered_blocks = m.get("anthropic_content_blocks")
+    if isinstance(ordered_blocks, list) and ordered_blocks:
+        replayed: List[Dict[str, Any]] = []
+        for b in ordered_blocks:
+            clean = _sanitize_replay_block(b)
+            if clean is not None:
+                replayed.append(clean)
+        if replayed:
+            return {"role": "assistant", "content": replayed}
+
     blocks = _extract_preserved_thinking_blocks(m)
     if content:
         if isinstance(content, list):
@@ -2424,6 +2495,59 @@ def sanitize_anthropic_kwargs(api_kwargs: Any, *, log_prefix: str = "") -> Any:
             sorted(leaked),
         )
     return api_kwargs
+
+
+def _is_stream_unavailable_error(exc: Exception) -> bool:
+    """Return True when an Anthropic stream call should fall back to create()."""
+    err_lower = str(exc).lower()
+    if "stream" in err_lower and "not supported" in err_lower:
+        return True
+    if "invokemodelwithresponsestream" in err_lower:
+        from agent.bedrock_adapter import is_streaming_access_denied_error
+
+        return is_streaming_access_denied_error(exc)
+    return False
+
+
+def create_anthropic_message(
+    client: Any,
+    api_kwargs: dict,
+    *,
+    log_prefix: str = "",
+    prefer_stream: bool = True,
+) -> Any:
+    """Create an Anthropic message, aggregating via stream when available.
+
+    Some Anthropic-compatible gateways are SSE-only: they ignore non-streaming
+    requests and return ``text/event-stream`` even for ``messages.create()``.
+    The SDK can surface that as raw text, so callers that expect a Message then
+    crash on ``.content``.  Prefer ``messages.stream().get_final_message()`` to
+    match the main turn path, falling back to ``create()`` only for providers
+    that explicitly do not support streaming, such as restricted Bedrock roles.
+    """
+    sanitize_anthropic_kwargs(api_kwargs, log_prefix=log_prefix)
+
+    messages_api = getattr(client, "messages", None)
+    stream_fn = getattr(messages_api, "stream", None)
+    if prefer_stream and callable(stream_fn):
+        stream_kwargs = dict(api_kwargs)
+        stream_kwargs.pop("stream", None)
+        try:
+            with stream_fn(**stream_kwargs) as stream:
+                return stream.get_final_message()
+        except Exception as exc:
+            if not _is_stream_unavailable_error(exc):
+                raise
+            logger.debug(
+                "%sAnthropic Messages stream unavailable; falling back to "
+                "messages.create(): %s",
+                log_prefix,
+                exc,
+            )
+
+    create_kwargs = dict(api_kwargs)
+    create_kwargs.pop("stream", None)
+    return messages_api.create(**create_kwargs)
 
 
 # ---------------------------------------------------------------------------
